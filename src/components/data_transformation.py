@@ -34,7 +34,7 @@ class DataTransformation:
         except Exception as e:
             raise CustomException(e, sys)
         
-    def get_data_transformer_object(cls)->Pipeline:
+    def get_data_transformer_object(self)->Pipeline:
         """
         It initialises a KNNImputer object with the parameters specified in the training_pipeline.py file
         and returns a Pipeline object with the KNNImputer object as the first step.

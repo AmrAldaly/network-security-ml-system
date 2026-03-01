@@ -38,6 +38,21 @@ class DataValidation:
         except Exception as e:
             raise CustomException(e,sys)
         
+    def validate_required_columns(self, dataframe: pd.DataFrame)-> bool:
+        try:
+            dataframe_columns = dataframe.columns
+            required_columns = self._schema_config.keys()
+            missing_columns = []
+            for required_column in required_columns:
+                if required_column not in dataframe_columns:
+                    missing_columns.append(required_column)
+            if len(missing_columns) > 0:
+                logging.info(f"Missing columns: {missing_columns}")
+                return False
+            return True
+        except Exception as e:
+            raise CustomException(e, sys)
+    
     def detect_dataset_drift(self,base_df,current_df,threshold=0.05)->bool:
         try:
             status=True
@@ -62,6 +77,7 @@ class DataValidation:
             dir_path = os.path.dirname(drift_report_file_path)
             os.makedirs(dir_path,exist_ok=True)
             write_yaml_file(file_path=drift_report_file_path,content=report)
+            return status
 
         except Exception as e:
             raise CustomException(e,sys)
@@ -83,7 +99,16 @@ class DataValidation:
                 error_message=f"Train dataframe does not contain all columns.\n"
             status = self.validate_number_of_columns(dataframe=test_dataframe)
             if not status:
-                error_message=f"Test dataframe does not contain all columns.\n"   
+                error_message=f"Test dataframe does not contain all columns.\n"
+
+            ## validate required columns
+            status=self.validate_required_columns(dataframe=train_dataframe)
+            if not status:
+                error_message=f"Train dataframe does not contain all required columns.\n"
+            status = self.validate_required_columns(dataframe=test_dataframe)
+            if not status:
+                error_message=f"Test dataframe does not contain all required columns.\n"
+               
 
             ## lets check datadrift
             status=self.detect_dataset_drift(base_df=train_dataframe,current_df=test_dataframe)
@@ -101,8 +126,8 @@ class DataValidation:
             
             data_validation_artifact = DataValidationArtifact(
                 validation_status=status,
-                valid_train_file_path=self.data_ingestion_artifact.trained_file_path,
-                valid_test_file_path=self.data_ingestion_artifact.test_file_path,
+                valid_train_file_path=self.data_validation_config.valid_train_file_path,
+                valid_test_file_path=self.data_validation_config.valid_test_file_path,
                 invalid_train_file_path=None,
                 invalid_test_file_path=None,
                 drift_report_file_path=self.data_validation_config.drift_report_file_path,
