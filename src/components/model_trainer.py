@@ -28,8 +28,8 @@ from sklearn.ensemble import (
 
 import mlflow   
 
-import dagshub
-dagshub.init(repo_owner='AmrAldaly', repo_name='network-security-ml-system', mlflow=True)
+## import dagshub
+## dagshub.init(repo_owner='AmrAldaly', repo_name='network-security-ml-system', mlflow=True)
 
 
 class ModelTrainer:
@@ -45,15 +45,17 @@ class ModelTrainer:
      with mlflow.start_run():
         try:
 
-        # Train metrics
-            mlflow.log_metric("train_f1_score", train_metric.f1_score)
-            mlflow.log_metric("train_precision", train_metric.precision_score)
-            mlflow.log_metric("train_recall", train_metric.recall_score)
+        
+            f1_score = test_metric.f1_score
+            recall_score = test_metric.recall_score
+            precision_score = test_metric.precision_score
+
+              
 
         # Test metrics
-            mlflow.log_metric("test_f1_score", test_metric.f1_score)
-            mlflow.log_metric("test_precision", test_metric.precision_score)
-            mlflow.log_metric("test_recall", test_metric.recall_score)
+            mlflow.log_metric("test_f1_score", f1_score)
+            mlflow.log_metric("test_precision", precision_score)
+            mlflow.log_metric("test_recall", recall_score)
 
             mlflow.sklearn.log_model(best_model, "model")
             
