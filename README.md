@@ -1,345 +1,361 @@
-# 🛡️ Network Security — Phishing URL Detection (MLOps)
+<div align="center">
 
-![Python](https://img.shields.io/badge/Python-3.10-blue)
-![FastAPI](https://img.shields.io/badge/FastAPI-0.100+-green)
-![MLflow](https://img.shields.io/badge/MLflow-tracked-orange)
-![DagsHub](https://img.shields.io/badge/DagsHub-integrated-purple)
-![Docker](https://img.shields.io/badge/Docker-ready-blue)
-![AWS](https://img.shields.io/badge/AWS-ECR%20%2B%20EC2-orange)
+# 🛡️ Network Security — Phishing URL Detection
+
+### An end-to-end MLOps pipeline for real-time phishing URL classification
+
+[![Python](https://img.shields.io/badge/Python-3.10-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://python.org)
+[![FastAPI](https://img.shields.io/badge/FastAPI-0.100+-009688?style=for-the-badge&logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com)
+[![scikit-learn](https://img.shields.io/badge/scikit--learn-1.3+-F7931E?style=for-the-badge&logo=scikit-learn&logoColor=white)](https://scikit-learn.org)
+[![MLflow](https://img.shields.io/badge/MLflow-Tracked-0194E2?style=for-the-badge&logo=mlflow&logoColor=white)](https://mlflow.org)
+[![DagsHub](https://img.shields.io/badge/DagsHub-Integrated-FF6B35?style=for-the-badge)](https://dagshub.com/AmrAldaly/network-security-ml-system)
+[![MongoDB](https://img.shields.io/badge/MongoDB-Atlas-47A248?style=for-the-badge&logo=mongodb&logoColor=white)](https://mongodb.com)
+[![Docker](https://img.shields.io/badge/Docker-Ready-2496ED?style=for-the-badge&logo=docker&logoColor=white)](https://docker.com)
+
+</div>
 
 ---
 
-## 📌 Project Overview
+## 📌 Overview
 
-This project is a **production-grade MLOps pipeline** for detecting **phishing URLs** in real time. It classifies any given URL into one of three categories:
+This project implements a **production-grade MLOps pipeline** that detects phishing URLs in real time using machine learning. A URL is submitted to a REST API and classified as one of three outcomes:
 
-| Label | Value | Meaning |
-|---|---|---|
-| `legitimate` | `1` | Safe URL |
-| `suspicious` | `0` | Borderline — exercise caution |
-| `phishing` | `-1` | Malicious URL — do not visit |
+| Prediction | Value | Meaning |
+|:---:|:---:|---|
+| **Legitimate** | `1` | Safe to visit |
+| **Suspicious** | `0` | Exercise caution |
+| **Phishing** | `-1` | Malicious — do not visit |
 
-The system is built with a clean separation between training, inference, and serving, and is deployed to **AWS EC2** via a **GitHub Actions CI/CD pipeline** with Docker images pushed to **AWS ECR**.
+The system is built around clean separation of concerns: a modular **training pipeline** (ingestion → validation → transformation → training), a **feature extraction engine** that derives 30 URL signals in real time, and a **FastAPI inference layer** that serves predictions via REST. Experiment tracking is handled by **MLflow + DagsHub**, and the application is fully **Dockerized** and ready for cloud deployment.
+
+> **Project Status:** Dockerized and ready for deployment. Not yet deployed to a live environment.
+
+---
+
+## 🏆 Model Performance
+
+The best model selected through grid-search cross-validation was a **Random Forest Classifier**.
+
+| Split | F1 Score | Precision | Recall |
+|:---:|:---:|:---:|:---:|
+| **Train** | `0.9911` | `0.9877` | `0.9945` |
+| **Test** | `0.9749` | `0.9733` | `0.9765` |
+
+The tight gap between train and test metrics confirms the model generalises well with no significant overfitting. Five classifiers were evaluated (Random Forest, Decision Tree, Gradient Boosting, Logistic Regression, AdaBoost) and the best was selected automatically based on test F1 score.
 
 ---
 
 ## 🚨 Problem Statement
 
-Phishing attacks remain one of the most prevalent cybersecurity threats. Attackers craft URLs that mimic legitimate websites to steal credentials, financial data, and personal information. Manual detection does not scale — this project automates URL classification using **30 URL-based and HTML-based features** and an ensemble ML model trained on a labelled dataset of phishing and legitimate URLs.
+Phishing attacks are among the most prevalent and damaging cybersecurity threats. Attackers craft deceptive URLs that closely mimic legitimate websites to harvest credentials, financial data, and personal information. Manual detection is neither scalable nor fast enough to keep up with the volume of new threats.
+
+This project addresses the problem by engineering a system that:
+- Extracts **30 structural and behavioural signals** from any URL automatically
+- Classifies it in real time using a trained ensemble model
+- Serves the prediction through a clean REST API, ready to be integrated into browsers, firewalls, or security toolchains
 
 ---
 
-## 🏗️ Architecture
+## 🏗️ System Architecture
 
-### ETL Pipeline (Data Loading)
+### ETL Pipeline
+
+Raw data originates from a local CSV file, is converted to JSON records, and loaded into **MongoDB Atlas** as the centralised data source for the training pipeline.
 
 ```
-Source (Local CSV / APIs / S3 / Internal DB)
-         │
-         ▼  Basic Preprocessing & Cleaning
-         │  Convert rows → JSON records
-         ▼
-     MongoDB Atlas  ←──── Raw data stored as JSON documents
+Local CSV Dataset
+      │
+      ▼  Convert rows → JSON documents
+      ▼
+  MongoDB Atlas  ←── Single source of truth for training data
 ```
+
+---
 
 ### Training Pipeline
 
 ```
-MongoDB Atlas (PhisingData collection)
+MongoDB Atlas
       │
       ▼
-┌─────────────────────────┐
-│   Data Ingestion        │  ← Pulls from MongoDB, exports to Feature Store (raw.csv)
-│                         │    Drops unused columns, splits → train.csv / test.csv
-└────────────┬────────────┘
-             │  DataIngestionArtifact
-             ▼
-┌─────────────────────────┐
-│   Data Validation       │  ① Validates schema (same no. of features)
-│                         │  ② Detects data drift (distribution shift)
-│                         │  ③ Checks numerical column existence
-│                         │    Outputs: valid/invalid CSVs + drift report
-└────────────┬────────────┘
-             │  DataValidationArtifact
-             ▼
-┌─────────────────────────┐
-│   Data Transformation   │  ① KNN Imputer   — fills missing values
-│                         │  ② Robust Scaler — scales using median/IQR
-│                         │  ③ SMOTE-Tomek   — resamples for class balance (train only)
-│                         │    Saves: preprocessor.pkl, train.npy, test.npy
-└────────────┬────────────┘
-             │  DataTransformationArtifact
-             ▼
-┌─────────────────────────┐
-│   Model Trainer         │  ← Grid-search across 5 classifiers (RF, DT, GBM, LR, AdaBoost)
-│                         │    Selects best model by F1 score
-│                         │    Logs metrics + model to MLflow / DagsHub
-│                         │    Saves: model.pkl + preprocessor.pkl → final_model/
-└────────────┬────────────┘
-             │  ModelTrainerArtifact
-             ▼
-┌─────────────────────────┐
-│   Model Evaluation      │  ← Compares new model score vs expected accuracy threshold
-│                         │    Accepts or rejects the new model
-└────────────┬────────────┘
-             │  Model Accepted? Yes / No
-             ▼
-┌─────────────────────────┐
-│   Model Pusher          │  ← If accepted: pushes artefacts to Cloud (AWS S3 / Azure)
-│                         │    If rejected: pipeline halts, existing model stays live
-└─────────────────────────┘
-```
-
-### Inference Pipeline
-
-```
-URL (string)
-     │
-     ▼
-┌──────────────────────────────┐
-│   Feature Extraction         │  ← 30 features via regex, requests,
-│   src/utils/feature_         │    BeautifulSoup, whois, SSL checks
-│   extraction.py              │    Output: {-1, 0, 1} encoded dict
-└──────────────┬───────────────┘
-               │
-               ▼
-┌──────────────────────────────┐
-│   KNN Imputer (no-op)        │  ← Part of fitted preprocessor.pkl
-│   + Robust Scaler            │    .transform() only — never .fit_transform()
-│   preprocessor.pkl           │    Same statistics fitted during training
-└──────────────┬───────────────┘
-               │
-               ▼
-┌──────────────────────────────┐
-│   Model Inference            │  ← Trained classifier → outputs -1 / 0 / 1
-│   model.pkl                  │    SMOTE-Tomek is NOT applied at inference
-└──────────────┬───────────────┘
-               │
-               ▼
-         JSON Response
-   { features, prediction, label }
-```
-
-> ⚠️ **Preprocessing alignment:** Training applies `KNNImputer → RobustScaler → SMOTETomek`.
-> Inference applies only `KNNImputer → RobustScaler` (same fitted object, `.transform()` only).
-> SMOTE-Tomek is a training-only resampler and is **never** used at inference time.
-
-### API Layer
-
-```
-Client  ──POST /predict──▶  FastAPI (src/api/app.py)
-                                    │  Pydantic validation
-                             PredictionPipeline
-                                    │
-                     ┌──────────────┼──────────────┐
-                     │              │               │
-              Feature           Preprocessor     Model
-              Extraction         .transform()   .predict()
-                     └──────────────┼──────────────┘
-                                    │
-                            ◀── JSON Response
-```
-
-### Deployment (CI/CD → AWS)
-
-```
-GitHub Push
-     │
-     ▼
-GitHub Actions
-  ├── CI: Lint & Test
-  └── CD: Build Docker Image
-               │
-               ▼
-          AWS ECR  ← Docker image pushed
-               │
-               ▼
-          AWS EC2  ← Container pulled and run  (or AWS App Runner)
-               │
-               ▼
-     FastAPI serving on port 8080
+┌──────────────────────────────────────────────────────────────┐
+│  Data Ingestion                                              │
+│  · Pulls collection from MongoDB                             │
+│  · Exports raw data to Feature Store                         │
+│  · Splits into train.csv / test.csv                          │
+└────────────────────────────┬─────────────────────────────────┘
+                             │  DataIngestionArtifact
+                             ▼
+┌──────────────────────────────────────────────────────────────┐
+│  Data Validation                                             │
+│  · Validates column count and names against schema.yaml      │
+│  · Detects distribution drift via KS test                    │
+│  · Outputs drift report + valid / invalid file paths         │
+└────────────────────────────┬─────────────────────────────────┘
+                             │  DataValidationArtifact
+                             ▼
+┌──────────────────────────────────────────────────────────────┐
+│  Data Transformation                                         │
+│  · KNN Imputer — fills missing values                        │
+│  · Saves preprocessor.pkl → final_model/                     │
+│  · Outputs train.npy and test.npy                            │
+└────────────────────────────┬─────────────────────────────────┘
+                             │  DataTransformationArtifact
+                             ▼
+┌──────────────────────────────────────────────────────────────┐
+│  Model Trainer                                               │
+│  · Grid-searches 5 classifiers (RF, DT, GBM, LR, AdaBoost)  │
+│  · Selects best model by test F1 score                       │
+│  · Logs all metrics and model to MLflow / DagsHub            │
+│  · Saves model.pkl → final_model/                            │
+└────────────────────────────┬─────────────────────────────────┘
+                             │  ModelTrainerArtifact
+                             ▼
+                   ✅ final_model/ ready for inference
 ```
 
 ---
 
-## 📁 Folder Structure
+### Inference Pipeline
+
+```
+Raw URL (string)
+      │
+      ▼
+┌──────────────────────────────────────────────────────────────┐
+│  Feature Extraction  (src/utils/feature_extraction.py)       │
+│  · 30 features extracted via regex, requests,                │
+│    BeautifulSoup, python-whois, and SSL inspection           │
+│  · All values encoded as {-1, 0, 1}                          │
+└────────────────────────────┬─────────────────────────────────┘
+                             │
+                             ▼
+┌──────────────────────────────────────────────────────────────┐
+│  Preprocessor  (final_model/preprocessor.pkl)                │
+│  · KNN Imputer applied via .transform() only                 │
+│  · Same object fitted during training — never refit          │
+└────────────────────────────┬─────────────────────────────────┘
+                             │
+                             ▼
+┌──────────────────────────────────────────────────────────────┐
+│  Model Inference  (final_model/model.pkl)                    │
+│  · Random Forest Classifier                                  │
+│  · Outputs prediction: -1 / 0 / 1                            │
+└────────────────────────────┬─────────────────────────────────┘
+                             │
+                             ▼
+              { features, prediction, label }
+```
+
+---
+
+### API Layer
+
+```
+POST /predict  ──▶  FastAPI (src/api/app.py)
+                          │
+                    Pydantic validates input
+                          │
+                    PredictionPipeline
+                    ├── Feature Extraction
+                    ├── preprocessor.transform()
+                    └── model.predict()
+                          │
+                    ◀── JSON Response
+```
+
+---
+
+### Deployment Architecture (Docker + AWS)
+
+> The application is Dockerized and the architecture below is the intended deployment target.
+
+```
+Developer pushes to GitHub
+          │
+          ▼
+  GitHub Actions CI/CD
+  ├── Build Docker image
+  └── Push to AWS ECR
+          │
+          ▼
+      AWS EC2
+  Pull image from ECR
+  Run container → FastAPI on port 8080
+```
+
+---
+
+## 📁 Project Structure
 
 ```
 NetworkSecurityProject/
 │
-├── Artifacts/                      # Timestamped outputs from each pipeline stage
+├── Artifacts/                          # Timestamped pipeline stage outputs
 │   ├── DataIngestion/
-│   ├── DataValidation/             # Includes drift report
-│   └── DataTransformation/         # train.npy, test.npy, preprocessor.pkl
+│   ├── DataValidation/                 # drift_report.yaml, valid/invalid CSVs
+│   └── DataTransformation/             # train.npy, test.npy
+│
 ├── data_schema/
-│   └── schema.yaml                 # Column names, types, expected value ranges
-├── final_model/
-│   ├── model.pkl                   # Best trained classifier (raw estimator)
-│   └── preprocessor.pkl            # Fitted KNNImputer + RobustScaler pipeline
-├── logs/                           # Daily rotating log files
-├── mlruns/                         # MLflow local experiment data
+│   └── schema.yaml                     # Expected columns and data types
+│
+├── final_model/                        # Inference-ready artefacts
+│   ├── model.pkl                       # Trained Random Forest classifier
+│   └── preprocessor.pkl               # Fitted KNN Imputer pipeline
+│
+├── logs/                               # Daily rotating log files
+├── mlruns/                             # MLflow local tracking data
+│
 ├── Network_Data/
-│   └── PhisingData.csv             # Raw labelled dataset (30 features + Result)
+│   └── PhisingData.csv                 # Raw labelled dataset (30 features + Result)
 │
 ├── src/
 │   ├── api/
-│   │   └── app.py                  # FastAPI serving layer — NO ML logic here
+│   │   └── app.py                      # FastAPI app — serving layer only, no ML logic
 │   │
-│   ├── components/
-│   │   ├── data_ingestion.py       # MongoDB → Feature Store → train/test CSV
-│   │   ├── data_validation.py      # Schema check, drift detection
-│   │   ├── data_transformation.py  # KNNImputer + RobustScaler + SMOTETomek
-│   │   └── model_trainer.py        # Grid-search, MLflow logging, saves final_model/
+│   ├── components/                     # One file per pipeline stage
+│   │   ├── data_ingestion.py
+│   │   ├── data_validation.py
+│   │   ├── data_transformation.py
+│   │   └── model_trainer.py
 │   │
 │   ├── pipeline/
-│   │   ├── training_pipeline.py    # Chains all training components end-to-end
-│   │   └── prediction_pipeline.py  # Inference: feature → preprocess → predict
+│   │   ├── training_pipeline.py        # Orchestrates all training stages
+│   │   └── prediction_pipeline.py      # Orchestrates inference stages
 │   │
 │   ├── utils/
-│   │   ├── feature_extraction.py   # Extracts all 30 features from a live URL
-│   │   ├── main_utils/utils.py     # save_object, load_object, load_numpy_array
+│   │   ├── feature_extraction.py       # 30-feature extractor for live URLs
+│   │   ├── main_utils/
+│   │   │   └── utils.py                # save_object, load_object, I/O helpers
 │   │   └── ml_utils/
-│   │       ├── metric/classification_metric.py  # F1, Precision, Recall
-│   │       └── model/estimator.py               # NetworkModel wrapper
+│   │       ├── metric/
+│   │       │   └── classification_metric.py
+│   │       └── model/
+│   │           └── estimator.py        # NetworkModel wrapper
 │   │
-│   ├── cloud/                      # AWS S3 / Azure Blob integration (Model Pusher)
-│   ├── constant/training_pipeline/ # Pipeline-wide constants (__init__.py)
+│   ├── cloud/                          # AWS S3 / Azure Blob (model pusher)
+│   ├── constant/
+│   │   └── training_pipeline/
+│   │       └── __init__.py             # All pipeline constants and paths
 │   ├── entity/
-│   │   ├── artifact_entity.py      # Dataclasses for component outputs
-│   │   └── config_entity.py        # Dataclasses for component configs
-│   ├── exception/exception.py      # Custom exception with traceback info
-│   └── logging/logger.py           # Rotating daily log configuration
+│   │   ├── artifact_entity.py          # Dataclasses for stage outputs
+│   │   └── config_entity.py            # Dataclasses for stage configs
+│   ├── exception/
+│   │   └── exception.py                # Custom exception with full traceback
+│   └── logging/
+│       └── logger.py                   # Rotating daily file logger
 │
 ├── .dockerignore
-├── .env                            # MONGODB_URL and secrets (never commit)
+├── .env                                # Secrets — never commit this file
 ├── .gitignore
-├── Dockerfile                      # Builds FastAPI image, uvicorn on port 8080
-├── main.py                         # Entry point: runs full training pipeline
-├── mongodb_connection.py           # MongoDB Atlas connection helper
-├── push_data.py                    # Migrates local CSV → MongoDB
-├── README.md
+├── Dockerfile
+├── main.py                             # Alternative training entry point
+├── mongodb_connection.py
+├── push_data.py                        # One-time CSV → MongoDB migration
 ├── requirements.txt
 └── setup.py
 ```
 
 ---
 
-## ⚙️ Setup Instructions
+## ⚙️ Getting Started
 
-### 1. Clone the repository
+### Prerequisites
+
+- Python 3.10+
+- MongoDB Atlas account (free tier is sufficient)
+- Docker Desktop (for containerised runs)
+
+### 1. Clone the Repository
 
 ```bash
 git clone https://github.com/AmrAldaly/network-security-ml-system.git
 cd network-security-ml-system
 ```
 
-### 2. Create and activate a virtual environment
+### 2. Create a Virtual Environment
 
 ```bash
 python -m venv venv
-source venv/bin/activate        # Linux/macOS
-venv\Scripts\activate           # Windows
+
+# Linux / macOS
+source venv/bin/activate
+
+# Windows
+venv\Scripts\activate
 ```
 
-### 3. Install dependencies
+### 3. Install Dependencies
 
 ```bash
 pip install -r requirements.txt
 ```
 
-### 4. Configure environment variables
+### 4. Configure Environment Variables
 
-Create a `.env` file in the project root:
+Create a `.env` file in the project root — this file is listed in `.gitignore` and must never be committed:
 
 ```env
 MONGODB_URL=mongodb+srv://<user>:<password>@cluster.mongodb.net/
-AWS_ACCESS_KEY_ID=<your_key>
-AWS_SECRET_ACCESS_KEY=<your_secret>
-AWS_REGION=us-east-1
 ```
 
-### 5. Push data to MongoDB (first time only)
+### 5. Load Data into MongoDB (first time only)
 
 ```bash
 python push_data.py
 ```
 
-### 6. Run the training pipeline
+### 6. Run the Training Pipeline
 
 ```bash
-python main.py
+python src/pipeline/training_pipeline.py
 ```
 
-Executes: Ingestion → Validation → Transformation → Training → Evaluation → Push.
-Saves `final_model/model.pkl` and `final_model/preprocessor.pkl`.
+This executes all stages in sequence: Data Ingestion → Validation → Transformation → Model Training. On completion, `final_model/model.pkl` and `final_model/preprocessor.pkl` will be created.
 
-### 7. Start the API server
+### 7. Start the API
 
 ```bash
 uvicorn src.api.app:app --host 0.0.0.0 --port 8080 --reload
 ```
 
-Interactive docs: [http://localhost:8080/docs](http://localhost:8080/docs)
+The interactive API docs will be available at **http://localhost:8080/docs**
 
 ---
 
 ## 🐳 Docker
 
-### Build the image
+### Build
 
 ```bash
 docker build -t phishing-detector .
 ```
 
-### Run the container
+### Run
 
 ```bash
 docker run -p 8080:8080 --env-file .env phishing-detector
 ```
 
----
-
-## ☁️ AWS Deployment (CI/CD)
-
-The project uses **GitHub Actions** for automated deployment to AWS:
-
-1. **CI** — runs tests and linting on every push
-2. **CD** — builds Docker image → pushes to **AWS ECR**
-3. **AWS EC2** — pulls latest image from ECR → restarts container
-
-To configure, add these secrets to your GitHub repository:
-
-| Secret | Description |
-|---|---|
-| `AWS_ACCESS_KEY_ID` | IAM user access key |
-| `AWS_SECRET_ACCESS_KEY` | IAM user secret |
-| `AWS_REGION` | e.g. `us-east-1` |
-| `ECR_REPOSITORY_URI` | Full ECR repository URI |
-| `EC2_HOST` | EC2 public IP or DNS |
-| `EC2_USERNAME` | e.g. `ec2-user` or `ubuntu` |
-| `EC2_SSH_KEY` | PEM key contents (base64) |
-
-Push to `main` → workflow triggers automatically.
+The API will be available at **http://localhost:8080**
 
 ---
 
-## 🔌 API Usage
+## 🔌 API Reference
 
-### Endpoint
+### `POST /predict`
 
-```
-POST /predict
-```
+Classifies a URL and returns the extracted features alongside the prediction.
 
-### Request
+**Request**
 
 ```bash
 curl -X POST http://localhost:8080/predict \
   -H "Content-Type: application/json" \
-  -d '{"url": "https://www.paypal-secure-login.com/verify"}'
+  -d '{"url": "https://paypal-secure-login.com/verify"}'
 ```
 
-### Response
+**Response**
 
 ```json
 {
@@ -380,72 +396,88 @@ curl -X POST http://localhost:8080/predict \
 }
 ```
 
-### Health check
+### `GET /`
+
+Health check endpoint.
 
 ```bash
 curl http://localhost:8080/
-# {"status": "ok", "message": "Phishing Detection API is running."}
+# → {"status": "ok", "message": "Phishing Detection API is running."}
 ```
 
 ---
 
-## 📊 Features
+## 📊 Feature Engineering
 
-All 30 features are encoded as `-1` (phishing), `0` (suspicious), or `1` (legitimate):
+The model is built on **30 features** extracted directly from the URL and its associated web page. Every feature is encoded as `-1` (phishing signal), `0` (suspicious/unknown), or `1` (legitimate signal).
 
-| # | Feature | Description |
-|---|---|---|
-| 1 | `having_IP_Address` | URL uses raw IP instead of a domain name |
-| 2 | `URL_Length` | < 54 chars (1), 54–75 (0), > 75 (-1) |
-| 3 | `Shortining_Service` | URL shortener service detected |
-| 4 | `having_At_Symbol` | `@` present in URL |
-| 5 | `double_slash_redirecting` | `//` occurs after position 6 |
-| 6 | `Prefix_Suffix` | `-` in the domain name |
-| 7 | `having_Sub_Domain` | 1 dot (1), 2 dots (0), 3+ dots (-1) |
-| 8 | `SSLfinal_State` | HTTPS with a valid certificate |
-| 9 | `Domain_registeration_length` | Domain registered for ≤ 1 year |
-| 10 | `Favicon` | Favicon loaded from an external domain |
-| 11 | `port` | Non-standard port in URL |
-| 12 | `HTTPS_token` | `https` token appears inside the domain name |
-| 13 | `Request_URL` | % of page resources loaded from external domains |
-| 14 | `URL_of_Anchor` | % of anchors pointing to external or null targets |
-| 15 | `Links_in_tags` | % of meta/script/link tags referencing external URLs |
-| 16 | `SFH` | Form action is blank, `about:blank`, or external |
-| 17 | `Submitting_to_email` | Form uses a `mailto:` action |
-| 18 | `Abnormal_URL` | URL host doesn't match whois-registered domain |
-| 19 | `Redirect` | ≤1 redirect (1), 2–4 (0), > 4 (-1) |
-| 20 | `on_mouseover` | Status bar URL hidden via `onMouseOver` |
-| 21 | `RightClick` | Right-click disabled on the page |
-| 22 | `popUpWidnow` | Popup window requesting user credentials |
-| 23 | `Iframe` | Hidden iframe (zero width/height) present |
-| 24 | `age_of_domain` | Domain younger than 6 months |
-| 25 | `DNSRecord` | No DNS record found for domain |
-| 26 | `web_traffic` | Traffic rank — 0 (unknown, Alexa API deprecated) |
-| 27 | `Page_Rank` | Google PageRank — -1 (unknown, API deprecated) |
-| 28 | `Google_Index` | URL is indexed by Google |
-| 29 | `Links_pointing_to_page` | Count of inbound links on the page |
-| 30 | `Statistical_report` | Listed in phishing statistical report databases |
-
----
-
-## 🧪 MLflow / DagsHub Tracking
-
-Training runs are logged to **DagsHub** automatically:
-
-- **Metrics:** `train_f1_score`, `test_f1_score`, `test_precision`, `test_recall`
-- **Model name:** registered under its actual algorithm name (e.g. `Random Forest`)
-- **Artefacts:** model uploaded to DagsHub Model Registry
-
-View experiments: `https://dagshub.com/AmrAldaly/network-security-ml-system`
+| # | Feature | Encoding Logic |
+|:---:|---|---|
+| 1 | `having_IP_Address` | IP in host → `-1`, domain name → `1` |
+| 2 | `URL_Length` | `<54` → `1`, `54–75` → `0`, `>75` → `-1` |
+| 3 | `Shortining_Service` | Shortener detected → `-1` |
+| 4 | `having_At_Symbol` | `@` in URL → `-1` |
+| 5 | `double_slash_redirecting` | `//` after position 6 → `-1` |
+| 6 | `Prefix_Suffix` | `-` in domain → `-1` |
+| 7 | `having_Sub_Domain` | 1 dot → `1`, 2 dots → `0`, 3+ → `-1` |
+| 8 | `SSLfinal_State` | Valid HTTPS cert → `1`, missing → `-1` |
+| 9 | `Domain_registeration_length` | Registered ≤1 year → `-1` |
+| 10 | `Favicon` | Favicon from external domain → `-1` |
+| 11 | `port` | Non-standard port → `-1` |
+| 12 | `HTTPS_token` | `https` token in domain name → `-1` |
+| 13 | `Request_URL` | `>61%` external resources → `-1` |
+| 14 | `URL_of_Anchor` | `>67%` external/null anchors → `-1` |
+| 15 | `Links_in_tags` | `>17%` external meta/script/link → `-1` |
+| 16 | `SFH` | Form action blank or external → `-1` |
+| 17 | `Submitting_to_email` | Form uses `mailto:` → `-1` |
+| 18 | `Abnormal_URL` | Host ≠ whois registered domain → `-1` |
+| 19 | `Redirect` | `≤1` redirect → `1`, `2–4` → `0`, `>4` → `-1` |
+| 20 | `on_mouseover` | Status bar URL spoofed → `-1` |
+| 21 | `RightClick` | Right-click disabled → `-1` |
+| 22 | `popUpWidnow` | Credential-harvesting popup → `-1` |
+| 23 | `Iframe` | Hidden iframe present → `-1` |
+| 24 | `age_of_domain` | Domain `<6` months old → `-1` |
+| 25 | `DNSRecord` | No DNS record found → `-1` |
+| 26 | `web_traffic` | Unknown (Alexa deprecated) → `0` |
+| 27 | `Page_Rank` | Unknown (Google API deprecated) → `-1` |
+| 28 | `Google_Index` | Not indexed by Google → `-1` |
+| 29 | `Links_pointing_to_page` | `0` links → `-1`, `1–2` → `0`, `2+` → `1` |
+| 30 | `Statistical_report` | In phishing DB → `-1` (default conservative) |
 
 ---
 
-## 🔮 Future Improvements
+## 🧪 Experiment Tracking
 
-- **Real-time threat feeds** — integrate PhishTank / OpenPhish API for `Statistical_report`
-- **Traffic & PageRank APIs** — replace defaulted features with SimilarWeb / Moz API calls
-- **Async feature extraction** — parallelise HTTP/whois calls with `asyncio` for lower latency
-- **Batch prediction endpoint** — `POST /predict/batch` accepting a list of URLs
-- **Model retraining trigger** — auto-retrain when drift report exceeds a configured threshold
-- **Authentication** — add API key or OAuth2 to the FastAPI layer
-- **Frontend dashboard** — simple React UI for manual URL checking
+All training runs are logged automatically to **DagsHub** via MLflow:
+
+- **Metrics tracked:** `train_f1_score`, `train_precision`, `train_recall`, `test_f1_score`, `test_precision`, `test_recall`
+- **Model registration:** each model is registered under its algorithm name (e.g. `Random Forest`) in the DagsHub Model Registry
+- **Reproducibility:** every run is timestamped and linked to its hyperparameters and dataset version
+
+🔗 **Experiment Dashboard:** [dagshub.com/AmrAldaly/network-security-ml-system](https://dagshub.com/AmrAldaly/network-security-ml-system)
+
+---
+
+## 🔮 Roadmap
+
+| Priority | Improvement |
+|:---:|---|
+| High | Integrate PhishTank / OpenPhish API to make `Statistical_report` dynamic |
+| High | Add AWS deployment workflow (GitHub Actions → ECR → EC2) |
+| Medium | Async feature extraction with `asyncio` to reduce inference latency |
+| Medium | Batch prediction endpoint — `POST /predict/batch` for lists of URLs |
+| Medium | Automated retraining trigger when data drift exceeds a configured threshold |
+| Low | API key authentication on the FastAPI layer |
+| Low | Lightweight frontend dashboard for manual URL submission |
+
+---
+
+## 📄 License
+
+This project is licensed under the MIT License.
+
+---
+
+<div align="center">
+Built by <a href="https://github.com/AmrAldaly">Amr Aldaly</a>
+</div>
