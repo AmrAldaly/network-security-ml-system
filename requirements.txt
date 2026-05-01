@@ -9,5 +9,8 @@ dill
 pyaml
 mlflow
 dagshub
-
+bs4
+python-whois
+fastapi
+uvicorn
 ##-e .

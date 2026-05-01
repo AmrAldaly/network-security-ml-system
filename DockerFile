@@ -1,0 +1,35 @@
+# ── Base image ────────────────────────────────────────────────────────────────
+# Use a slim Python image to keep the container lightweight
+FROM python:3.10-slim
+
+# ── Environment variables ──────────────────────────────────────────────────────
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    APP_HOME=/app
+
+# ── Working directory ─────────────────────────────────────────────────────────
+WORKDIR ${APP_HOME}
+
+# ── System dependencies ───────────────────────────────────────────────────────
+# Required by some Python packages (e.g. lxml, whois) and BeautifulSoup
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    gcc \
+    libssl-dev \
+    curl \
+ && rm -rf /var/lib/apt/lists/*
+
+# ── Python dependencies ───────────────────────────────────────────────────────
+# Copy requirements first for better Docker layer caching
+COPY requirements.txt .
+RUN pip install --no-cache-dir --upgrade pip \
+ && pip install --no-cache-dir -r requirements.txt
+
+# ── Application source ────────────────────────────────────────────────────────
+COPY . .
+
+# ── Expose port ───────────────────────────────────────────────────────────────
+EXPOSE 8080
+
+# ── Run FastAPI via uvicorn ───────────────────────────────────────────────────
+# src.api.app:app  → points to the `app` object inside src/api/app.py
+CMD ["uvicorn", "src.api.app:app", "--host", "0.0.0.0", "--port", "8080"]

@@ -5,8 +5,8 @@ import json
 from dotenv import load_dotenv
 load_dotenv()
 
-MONGO_DB_URL=os.getenv("MONGO_DB_URL")
-print(MONGO_DB_URL)
+MONGO_DB_URI=os.getenv("MONGO_DB_URI")
+print(MONGO_DB_URI)
 
 import certifi
 ca=certifi.where()
@@ -39,7 +39,7 @@ class NetworkDataExtract():
             self.collection=collection
             self.records=records
 
-            self.mongo_client=pymongo.MongoClient(MONGO_DB_URL)
+            self.mongo_client=pymongo.MongoClient(MONGO_DB_URI)
             self.database = self.mongo_client[self.database]
             
             self.collection=self.database[self.collection]

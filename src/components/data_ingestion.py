@@ -16,7 +16,7 @@ from sklearn.model_selection import train_test_split
 from dotenv import load_dotenv
 load_dotenv()
 
-MONGO_DB_URL=os.getenv("MONGO_DB_URL")
+MONGO_DB_URI=os.getenv("MONGO_DB_URI")
 
 
 class DataIngestion:
@@ -33,7 +33,7 @@ class DataIngestion:
         try:
             database_name=self.data_ingestion_config.database_name
             collection_name=self.data_ingestion_config.collection_name
-            self.mongo_client=pymongo.MongoClient(MONGO_DB_URL)  #connecting to mongodb
+            self.mongo_client=pymongo.MongoClient(MONGO_DB_URI)  #connecting to mongodb
             collection=self.mongo_client[database_name][collection_name]
 
             df=pd.DataFrame(list(collection.find()))
